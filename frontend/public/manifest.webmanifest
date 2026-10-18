@@ -1,0 +1,13 @@
+{
+  "name": "MyPortfolio · Private Analytics",
+  "short_name": "MyPortfolio",
+  "description": "Local-first portfolio analytics for your Groww statements.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f6fb",
+  "theme_color": "#11172c",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
