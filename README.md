@@ -8,6 +8,8 @@ An installable, privacy-first portfolio dashboard for Groww statements.
 - Replaces only the matching statement category when a newer file is imported.
 - Values the trading book with free Yahoo Finance quotes, trying NSE and BSE automatically.
 - Shows portfolio value, invested cost, unrealised return, one-day movement, allocation and recent executions.
+- Provides detailed local analysis: concentration and HHI, effective diversification, top-position exposure, contributor/detractor attribution, portfolio breadth, FIFO realised results, win rate, payoff ratio, turnover, average holding period and broker P&L/capital-gains references.
+- Explains data coverage and does not fabricate Sharpe, beta, volatility or drawdown without a trustworthy daily portfolio history.
 - Keeps the entire portfolio in browser storage with backup, restore, privacy mode and clear-data controls.
 - Works as a mobile Progressive Web App from GitHub Pages.
 
