@@ -1,4 +1,5 @@
 import type { PortfolioState } from "./types";
+import { classifyHolding } from "./classification";
 
 export const STORAGE_KEY = "myportfolio.local.v1";
 
@@ -22,7 +23,7 @@ export function loadState(): PortfolioState {
     if (value?.version !== 1 || !Array.isArray(value.holdings) || !Array.isArray(value.trades)) {
       throw new Error("Unsupported local data");
     }
-    return { ...blankState(), ...value };
+    return { ...blankState(), ...value, holdings: value.holdings.map(classifyHolding) };
   } catch {
     return blankState();
   }
@@ -47,5 +48,5 @@ export async function restoreBackup(file: File): Promise<PortfolioState> {
   if (value?.version !== 1 || !Array.isArray(value.holdings) || !Array.isArray(value.trades)) {
     throw new Error("This is not a valid MyPortfolio backup.");
   }
-  return { ...blankState(), ...value };
+  return { ...blankState(), ...value, holdings: value.holdings.map(classifyHolding) };
 }

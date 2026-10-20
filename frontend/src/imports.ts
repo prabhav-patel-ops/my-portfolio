@@ -1,6 +1,6 @@
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
-import type { Holding, ImportKind, ImportResult, ReferenceSummary, Trade } from "./types";
+import type { Holding, ImportKind, ImportResult, ReferenceSummary, ReferenceEntry, Trade } from "./types";
 
 type Cell = string | number | Date | null | undefined;
 type Row = Cell[];
@@ -21,11 +21,16 @@ const aliases: Record<string, string[]> = {
   isin: ["isin", "isin code"],
   realised: ["realised p&l", "realized p&l", "realised profit", "realized profit"],
   unrealised: ["unrealised p&l", "unrealized p&l", "unrealised profit", "unrealized profit"],
+  buyDate: ["buy date", "purchase date", "date of acquisition"],
+  sellDate: ["sell date", "sale date", "date of sale", "date of transfer"],
+  buyValue: ["buy value", "purchase value", "cost of acquisition", "buy amount"],
+  sellValue: ["sell value", "sale value", "sale consideration", "sell amount"],
 };
 
 function numberValue(value: Cell): number | null {
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
   const text = String(value ?? "").trim().replace(/^(?:₹|INR\s*|Rs\.?\s*)/i, "").replace(/[(),]/g, m => m === "(" ? "-" : "");
+  if (!text) return null;
   const parsed = Number(text.replace(/\)$/, ""));
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -157,7 +162,7 @@ export async function parseImport(file: File, kind: ImportKind): Promise<ImportR
         quantity,
         price,
         isin: isinAt >= 0 ? String(row[isinAt] ?? "").trim() || undefined : undefined,
-        charges: Math.max(0, numberValue(row[chargesAt]) ?? 0),
+        charges: chargesAt >= 0 && String(row[chargesAt] ?? "").trim() !== "" ? Math.max(0, numberValue(row[chargesAt]) ?? 0) : undefined,
       });
     });
     if (!trades.length) throw new Error("No executed trades were found. Upload Stocks Order History, not the P&L report.");
@@ -172,6 +177,7 @@ export async function parseImport(file: File, kind: ImportKind): Promise<ImportR
     ? sheets.filter(sheet => /trade\s*level/i.test(sheet.name))
     : sheets;
   let realised = 0, unrealised = 0, shortTerm = 0, longTerm = 0, reportRows = 0;
+  const entries: ReferenceEntry[] = [];
   for (const sheet of candidateSheets) {
     for (let headerIndex = 0; headerIndex < sheet.rows.length; headerIndex++) {
       const headers = sheet.rows[headerIndex];
@@ -188,6 +194,12 @@ export async function parseImport(file: File, kind: ImportKind): Promise<ImportR
         if (!symbol || /^(?:TOTAL|SUBTOTAL|GRAND TOTAL)$/.test(symbol)) continue;
         const r = realisedAt >= 0 ? numberValue(row[realisedAt]) : null;
         const u = unrealisedAt >= 0 ? numberValue(row[unrealisedAt]) : null;
+        const reportDate = (field: string) => {
+          const at = findColumn(headers,field), d = at >= 0 ? dateValue(row[at]) : null;
+          return d && Number.isFinite(Date.parse(d)) && new Date(d).toISOString().slice(0,10)===d ? d : undefined;
+        };
+        const reportValue = (field: string) => { const at=findColumn(headers,field);return at>=0?numberValue(row[at])??undefined:undefined; };
+        if (r!==null || u!==null) entries.push({symbol,realised:r??undefined,unrealised:u??undefined,buyDate:reportDate("buyDate"),sellDate:reportDate("sellDate"),buyValue:reportValue("buyValue"),sellValue:reportValue("sellValue"),term:term||undefined});
         if (r !== null) {
           realised += r;
           if (term === "short") shortTerm += r;
@@ -204,6 +216,7 @@ export async function parseImport(file: File, kind: ImportKind): Promise<ImportR
     importedAt: new Date().toISOString(),
     realised: Math.round(realised * 100) / 100,
     unrealised: Math.round(unrealised * 100) / 100,
+    entries,
     ...(shortTerm ? { shortTerm: Math.round(shortTerm * 100) / 100 } : {}),
     ...(longTerm ? { longTerm: Math.round(longTerm * 100) / 100 } : {}),
   };

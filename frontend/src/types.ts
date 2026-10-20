@@ -6,6 +6,9 @@ export type Holding = {
   isin?: string;
   exchange?: "NSE" | "BSE";
   sector?: string;
+  industry?: string;
+  capSegment?: "Large" | "Mid" | "Small";
+  averageDailyVolume?: number;
 };
 
 export type Trade = {
@@ -18,6 +21,7 @@ export type Trade = {
   price: number;
   isin?: string;
   charges?: number;
+  source?: "manual";
 };
 
 export type ReferenceSummary = {
@@ -27,6 +31,18 @@ export type ReferenceSummary = {
   unrealised: number;
   shortTerm?: number;
   longTerm?: number;
+  entries?: ReferenceEntry[];
+};
+
+export type ReferenceEntry = {
+  symbol: string;
+  realised?: number;
+  unrealised?: number;
+  buyDate?: string;
+  sellDate?: string;
+  buyValue?: number;
+  sellValue?: number;
+  term?: "short" | "long";
 };
 
 export type Quote = {
@@ -48,6 +64,21 @@ export type PortfolioState = {
   quotes: Record<string, Quote>;
   imports: Partial<Record<"holdings" | "trades" | "pnl" | "capital-gains", { fileName: string; importedAt: string; rows: number }>>;
   privacy: boolean;
+  history?: HistoryState;
+  autoRefresh?: boolean;
+  pendingManualHoldings?: string[];
+  cash?: number;
+  benchmarkWeights?: { date: string; rows: { symbol: string; weight: number; sector?: string; industry?: string }[] };
+};
+
+export type PricePoint = { date: string; value: number; accountValue?: number };
+export type HistoryState = {
+  nav: PricePoint[];
+  benchmark: PricePoint[];
+  assets: Record<string, PricePoint[]>;
+  fetchedAt?: string;
+  navFile?: string;
+  errors?: string[];
 };
 
 export type ImportKind = "holdings" | "trades" | "pnl" | "capital-gains";

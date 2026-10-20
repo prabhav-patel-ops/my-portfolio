@@ -1,9 +1,13 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { analysePortfolio } from "./analytics";
 import { parseImport } from "./imports";
-import { refreshQuotes } from "./market";
-import { blankState, downloadBackup, loadState, restoreBackup, saveState } from "./storage";
+import { refreshQuotes, refreshHistory } from "./market";
+import Research from "./Research";
+import PurchaseEntry from "./PurchaseEntry";
+import { mergeStatementTrades } from "./transactions";
+import { classifyHolding } from "./classification";
+import { blankState, downloadBackup, loadState, restoreBackup, saveState, STORAGE_KEY } from "./storage";
 import type { ImportKind, PortfolioState } from "./types";
 
 type View = "overview" | "analysis" | "holdings" | "activity" | "import" | "settings";
@@ -29,6 +33,10 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState("");
   const [pendingClear, setPendingClear] = useState(false);
+  const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const refreshing = useRef(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const analysis = useMemo(() => analysePortfolio(state.holdings, state.quotes, state.trades), [state.holdings, state.quotes, state.trades]);
@@ -69,15 +77,22 @@ export default function App() {
       const importedAt = new Date().toISOString();
       const next: PortfolioState = { ...state, imports: { ...state.imports } };
       if (kind === "holdings") {
+        if (state.pendingManualHoldings?.length && !window.confirm(`This statement will replace the current ${state.holdings.length} holdings, including ${state.pendingManualHoldings.length} manually added purchase entries. Continue only if the statement includes ALL those purchases. Their trade records will be retained.`)) return;
         const tradeSymbols = new Map(state.trades.filter(trade => trade.isin).map(trade => [trade.isin, trade.symbol]));
         next.holdings = (result.holdings || []).map(holding => ({
           ...holding,
           symbol: holding.isin && tradeSymbols.has(holding.isin) ? tradeSymbols.get(holding.isin)! : holding.symbol,
         }));
+        next.holdings = next.holdings.map(h => {
+          const old = state.holdings.find(previous => previous.symbol === h.symbol || !!h.isin && previous.isin === h.isin);
+          return classifyHolding({...h,sector:old?.sector,industry:old?.industry,capSegment:old?.capSegment,averageDailyVolume:old?.averageDailyVolume});
+        });
+        next.pendingManualHoldings = [];
         next.quotes = {};
         next.imports.holdings = { fileName: file.name, importedAt, rows: next.holdings.length };
       } else if (kind === "trades") {
-        next.trades = result.trades || [];
+        if (state.trades.some(t=>t.source==="manual") && !window.confirm(`Import ${result.trades?.length || 0} statement trades? Manual entries matching symbol, date, side, quantity and price are treated as the same execution (one-for-one); unmatched manual entries are retained. Verify that identical same-day purchases are not separate executions before continuing.`)) return;
+        next.trades = mergeStatementTrades(result.trades || [], state.trades);
         const tradeSymbols = new Map(next.trades.filter(trade => trade.isin).map(trade => [trade.isin, trade.symbol]));
         next.holdings = next.holdings.map(holding => ({
           ...holding,
@@ -97,19 +112,48 @@ export default function App() {
     } finally { setBusy(false); }
   }
 
-  async function updatePrices() {
-    if (!state.holdings.length) return setNotice("Import a current Holdings Statement first.");
-    setBusy(true); setProgress(`Checking 0 of ${state.holdings.length}`);
+  const updatePrices = useCallback(async () => {
+    if (refreshing.current) return;
+    const source = stateRef.current;
+    if (!source.holdings.length) return;
+    refreshing.current = true;
+    setBusy(true); setProgress(`Checking 0 of ${source.holdings.length}`);
     try {
-      const result = await refreshQuotes(state.holdings, state.quotes, (done, total) => setProgress(`Checking ${done} of ${total}`));
-      save({ ...state, quotes: result.quotes }, setState);
+      const result = await refreshQuotes(source.holdings, source.quotes, (done, total) => setProgress(`Checking ${done} of ${total}`));
+      let latest = stateRef.current;
+      // An import / reset during a request must not restore an older portfolio.
+      if (latest.profile !== source.profile || latest.holdings.map(h=>h.symbol).join("|") !== source.holdings.map(h=>h.symbol).join("|")) return;
+      const next = {...latest,quotes:result.quotes};
+      stateRef.current = next;
+      save(next,setState);
       setNotice(result.errors.length
-        ? `${result.updated} prices updated. ${result.errors.length} could not be verified: ${result.errors.slice(0, 4).join(", ")}${result.errors.length > 4 ? "…" : ""}`
+        ? `${result.updated} prices updated. ${result.errors.length} refreshes failed (usable prior quotes retained): ${result.errors.slice(0, 4).join(", ")}${result.errors.length > 4 ? "…" : ""}`
         : `All ${result.updated} market prices updated.`);
+      const fetched = latest.history?.fetchedAt;
+      const localHour = Number(new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Kolkata",hour:"2-digit",hourCycle:"h23"}).format(new Date()));
+      const historyDue = !latest.history?.benchmark.length || source.holdings.some(h=>!latest.history?.assets[h.symbol]?.length) || (localHour >= 16 && (!fetched || Date.now()-Date.parse(fetched)>12*3600000));
+      if (historyDue) {
+        setProgress("Updating daily history…");
+        const history = await refreshHistory(source.holdings,result.quotes,latest.history);
+        latest = stateRef.current;
+        if (latest.profile !== source.profile || latest.holdings.map(h=>h.symbol).join("|") !== source.holdings.map(h=>h.symbol).join("|")) return;
+        const updated = {...latest,history:{...history,nav:latest.history?.nav || [],navFile:latest.history?.navFile}};
+        stateRef.current=updated;save(updated,setState);
+      }
     } catch {
       setNotice("The free quote relay is temporarily unavailable. Your last saved prices were kept.");
-    } finally { setBusy(false); setProgress(""); }
-  }
+    } finally { refreshing.current=false;setBusy(false); setProgress(""); }
+  }, []);
+
+  const symbols = state.holdings.map(h=>h.symbol).join("|");
+  useEffect(() => {
+    if (!state.profile || state.autoRefresh === false || !symbols) return;
+    const refresh = () => { if (document.visibilityState === "visible") void updatePrices(); };
+    refresh();
+    const interval=window.setInterval(refresh,300000);
+    document.addEventListener("visibilitychange",refresh);
+    return ()=>{window.clearInterval(interval);document.removeEventListener("visibilitychange",refresh);};
+  },[symbols,state.profile,state.autoRefresh,updatePrices]);
 
   if (!state.profile) {
     return <main className="welcome">
@@ -160,6 +204,7 @@ export default function App() {
     </aside>
 
     <main className="workspace">
+      <div className="purchase-toolbar"><button className="secondary" disabled={busy} onClick={()=>setPurchaseOpen(true)}>＋ Record purchase</button></div>
       {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice("")}>×</button></div>}
 
       {view === "overview" && <>
@@ -188,6 +233,7 @@ export default function App() {
 
       {view === "analysis" && <>
         <div className="hero-row analysis-hero"><div><p className="kicker">PORTFOLIO INTELLIGENCE</p><h1>Detailed analysis</h1><p>Performance, concentration, attribution and trading behaviour calculated locally from your latest imports.</p></div><button className="primary" onClick={updatePrices} disabled={busy}>{busy ? progress || "Updating…" : "↻ Refresh analysis prices"}</button></div>
+        <Research state={state} onSave={next=>{stateRef.current=next;save(next,setState);}} onRefresh={()=>void updatePrices()} busy={busy}/>
         {!state.holdings.length && <section className="empty-hero"><div className="empty-art">⌁</div><h2>Analysis begins with your holdings</h2><p>Import the current Holdings Statement and Order History to build a complete analytical view.</p><button className="primary" onClick={() => setView("import")}>Import statements</button></section>}
         {!!state.holdings.length && <>
           <section className="metric-grid analysis-metrics">
@@ -258,10 +304,11 @@ export default function App() {
         <section className="settings-grid">
           <article className="panel setting"><h2>Local backup</h2><p>Download a complete local JSON copy before clearing browser data or changing phones. The exported file is not encrypted, so store it privately.</p><div><button className="secondary" onClick={() => downloadBackup(state)}>Download backup</button><label className="secondary">Restore backup<input ref={fileRef} type="file" accept=".json" onChange={async event => { try { const file = event.target.files?.[0]; if (file) save(await restoreBackup(file), setState); setNotice("Backup restored on this device."); } catch (error) { setNotice(error instanceof Error ? error.message : "Restore failed."); } event.target.value = ""; }} /></label></div></article>
           <article className="panel setting"><h2>Install on your phone</h2><p>In Chrome on Android, open the browser menu and choose “Install app” or “Add to Home screen”. On iPhone, use Safari → Share → Add to Home Screen.</p><div className="status-chip">✓ Installable PWA</div></article>
-          <article className="panel setting danger-zone"><h2>Clear this device</h2><p>Removes your profile, imports, holdings, trades and cached quotes from this browser. The public GitHub app contains none of them.</p>{pendingClear ? <div className="confirm-row"><button className="danger-button" onClick={() => { localStorage.clear(); setState(blankState()); setPendingClear(false); }}>Yes, clear everything</button><button className="secondary" onClick={() => setPendingClear(false)}>Cancel</button></div> : <button className="danger-button" onClick={() => setPendingClear(true)}>Clear local portfolio</button>}</article>
+          <article className="panel setting danger-zone"><h2>Clear this device</h2><p>Removes your profile, imports, holdings, trades and cached quotes from MyPortfolio on this browser.</p>{pendingClear ? <div className="confirm-row"><button className="danger-button" onClick={() => { localStorage.removeItem(STORAGE_KEY); const next=blankState();stateRef.current=next;setState(next);setPendingClear(false); }}>Yes, clear everything</button><button className="secondary" onClick={() => setPendingClear(false)}>Cancel</button></div> : <button className="danger-button" onClick={() => setPendingClear(true)}>Clear local portfolio</button>}</article>
         </section>
       </>}
     </main>
+    {purchaseOpen&&<PurchaseEntry state={state} onClose={()=>setPurchaseOpen(false)} onSave={next=>{stateRef.current=next;save(next,setState);setNotice("Purchase recorded locally. Holdings and analysis updated.");}}/>}
 
     <nav className="mobile-nav">{nav.map(item => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}><i>{item.icon}</i><span>{item.label}</span></button>)}</nav>
   </div>;
