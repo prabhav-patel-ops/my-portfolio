@@ -62,6 +62,7 @@ export type PortfolioState = {
   pnl: ReferenceSummary | null;
   capitalGains: ReferenceSummary | null;
   quotes: Record<string, Quote>;
+  quoteRefresh?: QuoteRefresh;
   imports: Partial<Record<"holdings" | "trades" | "pnl" | "capital-gains", { fileName: string; importedAt: string; rows: number }>>;
   privacy: boolean;
   history?: HistoryState;
@@ -70,6 +71,8 @@ export type PortfolioState = {
   cash?: number;
   benchmarkWeights?: { date: string; rows: { symbol: string; weight: number; sector?: string; industry?: string }[] };
 };
+
+export type QuoteRefresh = { attemptedAt:string; refreshedSymbols:string[]; retainedSymbols:string[]; missingSymbols:string[] };
 
 export type PricePoint = { date: string; value: number; accountValue?: number };
 export type HistoryState = {

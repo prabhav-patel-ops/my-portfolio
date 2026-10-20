@@ -1,5 +1,24 @@
 # Detailed analysis verification
 
+## Quote-refresh correction · 2026-10-20
+
+- Reused LotBook's batch quote implementation from commit
+  `f06e5b50e9102174fb7e2b7c041f0fdf3795d441`; adapter changes preserve ticker and
+  previous close and honour explicit exchange selection.
+- Reproduced a 19-holding refresh with a live public synthetic stock list,
+  including LICI, CHEMCON, GRSE and HDFCBANK: **19 verified quotes, zero errors,
+  two sequential requests, maximum concurrency one**, all with previous close.
+  No private portfolio quantities, prices or statements were used.
+- All **38 automated checks** pass, including the exact 3-checked / 16-cached
+  screenshot scenario, 19/70-holding batch counts, rate-limit retry, nested URL
+  ampersands, renamed tickers, BSE identity checks, cached/missing/expired price
+  reporting, India-time scheduling, shared transport pacing, and history retry
+  cooldown.
+- Price refresh no longer starts a ten-year history request per holding.
+  Historical requests are sequential, paced and loaded separately on Analysis.
+- Both fetched and market timestamps are validated. The UI says saved prices,
+  with explicit last-check counts, rather than calling all cached quotes recent.
+
 ## Passed
 
 - Production TypeScript / Vite build.

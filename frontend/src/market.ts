@@ -1,12 +1,24 @@
 import type { Holding, Quote, PricePoint, HistoryState } from "./types";
-
-const MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+import { discoverYahooSymbol, fetchYahooBatchQuotes, marketTicker, usableMarketQuote } from "./vendor/lotbook-market.js";
 
 export function usable(quote?: Quote) {
-  if (!quote || !Number.isFinite(quote.price) || quote.price <= 0) return false;
-  const age = Date.now() - Date.parse(quote.marketAt || quote.fetchedAt);
-  return Number.isFinite(age) && age >= -300000 && age <= MAX_AGE;
+  return usableMarketQuote(quote);
 }
+
+// Quotes and optional history share one paced transport, so opening Analysis
+// cannot burst dozens of requests into the same anonymous relay allowance.
+let requestQueue: Promise<unknown> = Promise.resolve();
+let nextRequestAt = 0;
+export const marketFetch: typeof fetch = (input, init) => {
+  const request = requestQueue.then(async () => {
+    const wait = Math.max(0,nextRequestAt-Date.now());
+    if (wait) await new Promise(resolve=>setTimeout(resolve,wait));
+    nextRequestAt=Date.now()+3500;
+    return fetch(input,init);
+  });
+  requestQueue=request.catch(()=>undefined);
+  return request;
+};
 
 function ticker(symbol: string, exchange: "NSE" | "BSE") {
   const clean = symbol.trim().toUpperCase().replace(/^(?:NSE|BSE):/, "").replace(/\.(?:NS|BO)$/, "").replace(/\$$/, "");
@@ -14,11 +26,11 @@ function ticker(symbol: string, exchange: "NSE" | "BSE") {
   return `${clean}.${exchange === "BSE" ? "BO" : "NS"}`;
 }
 
-async function relayJson(target: string) {
+async function relayJson(target: string, fetcher: typeof fetch = marketFetch) {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 15000);
   try {
-    const response = await fetch(`https://r.jina.ai/${target}`, {
+    const response = await fetcher(`https://r.jina.ai/${target}`, {
       headers: { "X-No-Cache": "true", accept: "text/plain" },
       signal: controller.signal,
       cache: "no-store",
@@ -27,91 +39,62 @@ async function relayJson(target: string) {
     const text = await response.text();
     const marker = text.indexOf("Markdown Content:");
     const start = text.indexOf("{", Math.max(0, marker));
-    if (start < 0 || text.length > 4000000) throw new Error("unexpected market response");
+    if (marker < 0 || start < 0 || text.length > 4000000) throw new Error("unexpected market response");
     return JSON.parse(text.slice(start).trim());
   } finally {
     window.clearTimeout(timer);
   }
 }
 
-async function fetchTicker(value: string): Promise<Quote> {
-  const target = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(value)}?range=1d&interval=5m`;
-  const payload = await relayJson(target);
-  const meta = payload?.chart?.result?.[0]?.meta;
-  if (payload?.chart?.error || meta?.symbol !== value || meta?.currency !== "INR") throw new Error("identity not verified");
-  const price = Number(meta.regularMarketPrice);
-  const previousClose = Number(meta.chartPreviousClose ?? meta.previousClose);
-  const stamp = Number(meta.regularMarketTime) * 1000;
-  if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(stamp)) throw new Error("no usable price");
-  return {
-    price,
-    previousClose: Number.isFinite(previousClose) && previousClose > 0 ? previousClose : null,
-    marketAt: new Date(stamp).toISOString(),
-    fetchedAt: new Date().toISOString(),
-    ticker: value,
-    source: "Yahoo Finance via privacy relay",
-  };
-}
-
-async function resolveTicker(holding: Holding) {
-  const target = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(holding.name)}&quotesCount=10&newsCount=0`;
-  const payload = await relayJson(target);
-  const choices = (Array.isArray(payload?.quotes) ? payload.quotes : []).filter((item: { symbol?: string; currency?: string }) =>
-    item?.currency === "INR" && /\.(?:NS|BO)$/.test(item.symbol || ""));
-  const legalName = (s: string) => s.toUpperCase().replace(/\b(LIMITED|LTD)\b/g, "").replace(/[^A-Z0-9]/g, "");
-  const exact = choices.filter((item: { shortname?: string; longname?: string }) => [item.shortname,item.longname].some(name => name && legalName(name) === legalName(holding.name)));
-  const preferred = exact.find((item: { symbol: string }) => holding.exchange === "BSE" ? item.symbol.endsWith(".BO") : item.symbol.endsWith(".NS")) || exact[0];
-  if (!preferred?.symbol) throw new Error("no verified market ticker");
-  return preferred.symbol as string;
-}
-
-async function quoteHolding(holding: Holding) {
-  if (!/^[A-Z0-9&._-]+$/.test(holding.symbol.trim().toUpperCase())) {
-    return fetchTicker(await resolveTicker(holding));
-  }
-  const exchanges: ("NSE" | "BSE")[] = holding.exchange ? [holding.exchange, holding.exchange === "NSE" ? "BSE" : "NSE"] : ["NSE", "BSE"];
-  let last: unknown;
-  for (const exchange of exchanges) {
-    try {
-      return await fetchTicker(ticker(holding.symbol, exchange));
-    } catch (error) {
-      last = error;
-    }
-  }
-  throw last instanceof Error ? last : new Error("no verified NSE or BSE quote");
-}
-
 export async function refreshQuotes(
   holdings: Holding[],
   existing: Record<string, Quote>,
   onProgress?: (done: number, total: number) => void,
+  fetcher: typeof fetch = marketFetch,
 ) {
   const unique = [...new Map(holdings.map(holding => [holding.symbol, holding])).values()];
   const quotes = { ...existing };
   const errors: string[] = [];
-  let updated = 0;
-  let cursor = 0, done = 0;
-  const workers = Array.from({ length: Math.min(8, unique.length) }, async () => {
-    while (cursor < unique.length) {
-      const holding = unique[cursor++];
-      try {
-        quotes[holding.symbol] = await quoteHolding(holding);
-        updated++;
-      } catch {
-        errors.push(holding.symbol);
-        if (!usable(quotes[holding.symbol])) delete quotes[holding.symbol];
-      } finally {
-        done++;
-        onProgress?.(done, unique.length);
-      }
+  const requested = new Map<string,string[]>();
+  const batch: {symbol:string;name:string}[]=[];
+  onProgress?.(0,unique.length);
+  for (const holding of unique) {
+    let mapped = marketTicker(holding.symbol);
+    let requestSymbol: string;
+    if (mapped) {
+      // Explicit listing information takes precedence over an implicit NSE
+      // default. Keep the user's original symbol as the portfolio/cache key.
+      const explicit=/^(NSE|BSE):|\.(NS|BO)\$?$/i.test(holding.symbol);
+      const exchange=explicit?mapped.exchange:holding.exchange || mapped.exchange;
+      requestSymbol=`${exchange}:${mapped.ticker}`;
+    } else {
+      const discovered=await discoverYahooSymbol({symbol:holding.symbol,companyName:holding.name,ticker:"",exchange:holding.exchange || "NSE"},fetcher);
+      if (!discovered) {errors.push(holding.symbol);continue;}
+      requestSymbol=`${discovered.suffix===".BO"?"BSE":"NSE"}:${discovered.ticker}`;
     }
-  });
-  await Promise.all(workers);
-  return { quotes, errors, updated };
+    const originals=requested.get(requestSymbol) || [];
+    originals.push(holding.symbol);requested.set(requestSymbol,originals);
+    if (originals.length===1) batch.push({symbol:requestSymbol,name:holding.name});
+  }
+  const result = await fetchYahooBatchQuotes(batch,fetcher);
+  const refreshedSymbols: string[]=[];
+  for (const [requestSymbol,originals] of requested) {
+    const quote=result.quotes[requestSymbol];
+    for (const symbol of originals) {
+      if (quote) {quotes[symbol]=quote;refreshedSymbols.push(symbol);}
+      else errors.push(symbol);
+    }
+  }
+  const retainedSymbols=errors.filter(symbol=>usable(quotes[symbol]));
+  const missingSymbols=errors.filter(symbol=>!usable(quotes[symbol]));
+  missingSymbols.forEach(symbol=>delete quotes[symbol]);
+  onProgress?.(unique.length,unique.length);
+  return { quotes, errors, updated:refreshedSymbols.length, refreshedSymbols,retainedSymbols,missingSymbols,attemptedAt:new Date().toISOString() };
 }
 
-export async function fetchDailyHistory(symbol: string): Promise<PricePoint[]> {
-  const payload = await relayJson(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=10y&interval=1d`);
+export async function fetchDailyHistory(symbol: string,fetcher: typeof fetch = marketFetch): Promise<PricePoint[]> {
+  const encoded=encodeURIComponent(symbol).replace(/%26/g,"%2526");
+  const payload = await relayJson(`https://query1.finance.yahoo.com/v8/finance/chart/${encoded}?range=10y%26interval=1d`,fetcher);
   const result = payload?.chart?.result?.[0];
   if (payload?.chart?.error || result?.meta?.symbol !== symbol || result?.meta?.currency !== "INR") throw Error("Historical ticker identity could not be verified.");
   const prices = symbol === "^NSEI" ? result.indicators?.quote?.[0]?.close : result.indicators?.adjclose?.[0]?.adjclose;
@@ -126,23 +109,21 @@ export async function fetchDailyHistory(symbol: string): Promise<PricePoint[]> {
   });
 }
 
-export async function refreshHistory(holdings: Holding[], quotes: Record<string, Quote>, existing?: HistoryState): Promise<HistoryState> {
+export async function refreshHistory(holdings: Holding[], quotes: Record<string, Quote>, existing?: HistoryState,onProgress?:(done:number,total:number)=>void,fetcher:typeof fetch=marketFetch): Promise<HistoryState> {
   const next: HistoryState = { nav: existing?.nav || [], navFile: existing?.navFile, benchmark: existing?.benchmark || [], assets: { ...existing?.assets }, fetchedAt: new Date().toISOString(), errors: [] };
   const jobs = [{ key: "^NSEI", ticker: "^NSEI" }];
   for (const h of holdings) {
     try {jobs.push({key:h.symbol,ticker:quotes[h.symbol]?.ticker || ticker(h.symbol,h.exchange || "NSE")});}
     catch {next.errors!.push(h.symbol);}
   }
-  let cursor = 0;
-  await Promise.all(Array.from({ length: Math.min(3, jobs.length) }, async () => {
-    while (cursor < jobs.length) {
-      const job = jobs[cursor++];
+  let done=0;
+  for (const job of jobs) {
       try {
-        const points = await fetchDailyHistory(job.ticker);
+        const points = await fetchDailyHistory(job.ticker,fetcher);
         if (points.length < 2) throw Error("Insufficient history");
         if (job.key === "^NSEI") next.benchmark = points; else next.assets[job.key] = points;
       } catch { next.errors!.push(job.key); }
-    }
-  }));
+      onProgress?.(++done,jobs.length);
+  }
   return next;
 }

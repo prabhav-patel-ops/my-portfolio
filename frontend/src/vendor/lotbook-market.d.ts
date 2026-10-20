@@ -1,0 +1,10 @@
+export type MarketTicker = {exchange: "NSE" | "BSE"; ticker: string};
+export type LotbookQuote = {price:number;fetchedAt:string;marketAt:string;exchange:"NSE"|"BSE";ticker:string;previousClose:number|null;source:string};
+export type DiscoveryEntry = MarketTicker & {symbol:string;companyName:string;verifyBse?:boolean};
+export type DiscoveredEntry = DiscoveryEntry & {suffix:".NS"|".BO"};
+export function marketTicker(symbol:string):MarketTicker|null;
+export function usableMarketQuote(quote?:{price:number;fetchedAt:string;marketAt?:string},now?:number):boolean;
+export function parseYahooQuote(payload:unknown,symbol:string,fetchedAt?:string):LotbookQuote;
+export function companyIdentityMatches(expected:string,actual:string,ticker?:string):boolean;
+export function discoverYahooSymbol(entry:DiscoveryEntry,fetcher?:typeof fetch):Promise<DiscoveredEntry|null>;
+export function fetchYahooBatchQuotes(holdings:{symbol:string;name?:string}[],fetcher?:typeof fetch,fetchedAt?:string):Promise<{quotes:Record<string,LotbookQuote>;errors:string[]}>;

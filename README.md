@@ -91,9 +91,26 @@ same-day entries are separate executions, reconcile them before confirming.
 Manual sales are not offered because a holdings snapshot alone cannot establish
 remaining FIFO cost accurately.
 
-Prices refresh every five minutes while the app is visible, unless disabled.
-Daily history refreshes on initial/missing coverage and after 4pm IST once the
-cache is older than 12 hours. Risk curves exclude an in-progress daily candle.
+Quote fetching reuses LotBook's market module at revision
+`f06e5b50e9102174fb7e2b7c041f0fdf3795d441`, vendored in
+`frontend/src/vendor/lotbook-market.js`. It sends sequential batches of at most
+ten symbols, retries failed batches once, verifies BSE fallback identities, and
+discovers renamed symbols using company identity. The adapter additionally keeps
+the verified ticker and previous-close metadata for MyPortfolio analytics.
+Both fetched and market timestamps must be usable. Refresh status separates
+successful checks, retained cached prices and holdings without a usable price;
+saved prices are not all labelled recent or live.
+
+Prices are checked on opening and then every five minutes while visible during
+weekday market hours (9:15am–3:30pm IST), unless disabled. Manual price checks
+remain available outside market hours. Visibility changes respect the same
+five-minute cooldown. Automatic scheduling does not include a holiday calendar.
+The overview price button does not load historical prices. History loads
+separately on Analysis, with a one-hour cooldown even after missing/failed
+coverage, and after 4pm IST once a complete cache is older than 12 hours. The
+Analysis refresh button explicitly checks both. Quote and history requests share
+a sequential transport paced at least 3.5 seconds apart to avoid relay bursts.
+Risk curves exclude an in-progress daily candle.
 No updates run while the app is closed. Free data and the relay can be delayed
 or unavailable; the app shows coverage and failure information.
 
