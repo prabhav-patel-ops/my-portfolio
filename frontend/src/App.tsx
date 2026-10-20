@@ -7,6 +7,7 @@ import Research from "./Research";
 import PurchaseEntry from "./PurchaseEntry";
 import { mergeStatementTrades } from "./transactions";
 import { classifyHolding } from "./classification";
+import { AUTO_REFRESH_MS,historyDue,marketIsOpen,priceCoverage,refreshNotice } from "./market-status";
 import { blankState, downloadBackup, loadState, restoreBackup, saveState, STORAGE_KEY } from "./storage";
 import type { ImportKind, PortfolioState } from "./types";
 
@@ -32,11 +33,15 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState("");
+  const [historyBusy,setHistoryBusy]=useState(false);
+  const [historyProgress,setHistoryProgress]=useState("");
   const [pendingClear, setPendingClear] = useState(false);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const stateRef = useRef(state);
   stateRef.current = state;
   const refreshing = useRef(false);
+  const historyRefreshing=useRef(false);
+  const lastQuoteAttempt=useRef(0);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const analysis = useMemo(() => analysePortfolio(state.holdings, state.quotes, state.trades), [state.holdings, state.quotes, state.trades]);
@@ -50,6 +55,7 @@ export default function App() {
     quoted: analysis.totals.quoted,
   };
   const tradeStats = analysis.trading;
+  const coverage=priceCoverage(state);
   const visible = useMemo(() => rows
     .filter(row => !search || `${row.symbol} ${row.name}`.toLowerCase().includes(search.toLowerCase()))
     .filter(row => filter === "all" || (filter === "profit" ? row.pnl >= 0 && !!row.quote : row.pnl < 0 && !!row.quote))
@@ -117,43 +123,51 @@ export default function App() {
     const source = stateRef.current;
     if (!source.holdings.length) return;
     refreshing.current = true;
+    lastQuoteAttempt.current=Date.now();
     setBusy(true); setProgress(`Checking 0 of ${source.holdings.length}`);
     try {
       const result = await refreshQuotes(source.holdings, source.quotes, (done, total) => setProgress(`Checking ${done} of ${total}`));
       let latest = stateRef.current;
       // An import / reset during a request must not restore an older portfolio.
       if (latest.profile !== source.profile || latest.holdings.map(h=>h.symbol).join("|") !== source.holdings.map(h=>h.symbol).join("|")) return;
-      const next = {...latest,quotes:result.quotes};
+      const next = {...latest,quotes:result.quotes,quoteRefresh:{attemptedAt:result.attemptedAt,refreshedSymbols:result.refreshedSymbols,retainedSymbols:result.retainedSymbols,missingSymbols:result.missingSymbols}};
       stateRef.current = next;
       save(next,setState);
-      setNotice(result.errors.length
-        ? `${result.updated} prices updated. ${result.errors.length} refreshes failed (usable prior quotes retained): ${result.errors.slice(0, 4).join(", ")}${result.errors.length > 4 ? "…" : ""}`
-        : `All ${result.updated} market prices updated.`);
-      const fetched = latest.history?.fetchedAt;
-      const localHour = Number(new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Kolkata",hour:"2-digit",hourCycle:"h23"}).format(new Date()));
-      const historyDue = !latest.history?.benchmark.length || source.holdings.some(h=>!latest.history?.assets[h.symbol]?.length) || (localHour >= 16 && (!fetched || Date.now()-Date.parse(fetched)>12*3600000));
-      if (historyDue) {
-        setProgress("Updating daily history…");
-        const history = await refreshHistory(source.holdings,result.quotes,latest.history);
-        latest = stateRef.current;
-        if (latest.profile !== source.profile || latest.holdings.map(h=>h.symbol).join("|") !== source.holdings.map(h=>h.symbol).join("|")) return;
-        const updated = {...latest,history:{...history,nav:latest.history?.nav || [],navFile:latest.history?.navFile}};
-        stateRef.current=updated;save(updated,setState);
-      }
+      setNotice(refreshNotice(next.quoteRefresh));
     } catch {
       setNotice("The free quote relay is temporarily unavailable. Your last saved prices were kept.");
     } finally { refreshing.current=false;setBusy(false); setProgress(""); }
   }, []);
 
+  const updateHistory=useCallback(async(force=false)=>{
+    if(historyRefreshing.current || refreshing.current) return;
+    const source=stateRef.current;
+    if(!source.holdings.length || (!force&&!historyDue(source))) return;
+    historyRefreshing.current=true;setHistoryBusy(true);setHistoryProgress("Loading daily history…");
+    try {
+      const history=await refreshHistory(source.holdings,source.quotes,source.history,(done,total)=>setHistoryProgress(`Daily history: ${done} of ${total} checked`));
+      const latest=stateRef.current;
+      if(latest.profile!==source.profile || latest.holdings.map(h=>h.symbol).join("|")!==source.holdings.map(h=>h.symbol).join("|")) return;
+      const updated={...latest,history:{...history,nav:latest.history?.nav||[],navFile:latest.history?.navFile}};
+      stateRef.current=updated;save(updated,setState);
+      setHistoryProgress(history.errors?.length?`Daily history checked; ${history.errors.length} unavailable. Saved history was retained where available.`:"Daily history updated.");
+    } catch {setHistoryProgress("Daily history is unavailable. Saved price quotes and portfolio data were retained.");}
+    finally {historyRefreshing.current=false;setHistoryBusy(false);}
+  },[]);
+
   const symbols = state.holdings.map(h=>h.symbol).join("|");
   useEffect(() => {
     if (!state.profile || state.autoRefresh === false || !symbols) return;
-    const refresh = () => { if (document.visibilityState === "visible") void updatePrices(); };
-    refresh();
-    const interval=window.setInterval(refresh,300000);
+    const refresh = () => { if (document.visibilityState === "visible" && marketIsOpen() && Date.now()-lastQuoteAttempt.current>=AUTO_REFRESH_MS) void updatePrices(); };
+    if(document.visibilityState==="visible" && Date.now()-lastQuoteAttempt.current>=AUTO_REFRESH_MS) void updatePrices();
+    const interval=window.setInterval(refresh,AUTO_REFRESH_MS);
     document.addEventListener("visibilitychange",refresh);
     return ()=>{window.clearInterval(interval);document.removeEventListener("visibilitychange",refresh);};
   },[symbols,state.profile,state.autoRefresh,updatePrices]);
+
+  useEffect(()=>{
+    if(view==="analysis" && !busy && state.autoRefresh!==false && document.visibilityState==="visible") void updateHistory();
+  },[view,symbols,busy,state.autoRefresh,updateHistory]);
 
   if (!state.profile) {
     return <main className="welcome">
@@ -206,10 +220,11 @@ export default function App() {
     <main className="workspace">
       <div className="purchase-toolbar"><button className="secondary" disabled={busy} onClick={()=>setPurchaseOpen(true)}>＋ Record purchase</button></div>
       {notice && <div className="notice" role="status">{notice}<button onClick={() => setNotice("")}>×</button></div>}
+      {state.quoteRefresh&&<p className="quote-freshness">Last quote check {new Date(state.quoteRefresh.attemptedAt).toLocaleString("en-IN",{timeZone:"Asia/Kolkata",dateStyle:"medium",timeStyle:"short"})} IST · {coverage.refreshed} checked successfully · {coverage.retained} saved after failed checks · {coverage.missing} unavailable</p>}
 
       {view === "overview" && <>
         <div className="hero-row">
-          <div><p className="kicker">GOOD {new Date().getHours() < 12 ? "MORNING" : new Date().getHours() < 18 ? "AFTERNOON" : "EVENING"}, {state.profile.toUpperCase()}</p><h1>Your portfolio at a glance</h1><p>{totals.quoted} of {state.holdings.length} holdings have a recent market price.</p></div>
+          <div><p className="kicker">GOOD {new Date().getHours() < 12 ? "MORNING" : new Date().getHours() < 18 ? "AFTERNOON" : "EVENING"}, {state.profile.toUpperCase()}</p><h1>Your portfolio at a glance</h1><p>{totals.quoted} of {state.holdings.length} holdings have an available saved price. Market quotes may be delayed.</p></div>
           <button className="primary" onClick={updatePrices} disabled={busy}>{busy ? progress || "Updating…" : "↻ Update live prices"}</button>
         </div>
         {!state.holdings.length && <section className="empty-hero"><div className="empty-art">⇧</div><h2>Start with your current holdings</h2><p>Upload the Groww Holdings Statement. It is read on this device and immediately becomes your private dashboard.</p><button className="primary" onClick={() => setView("import")}>Import statements</button></section>}
@@ -233,7 +248,8 @@ export default function App() {
 
       {view === "analysis" && <>
         <div className="hero-row analysis-hero"><div><p className="kicker">PORTFOLIO INTELLIGENCE</p><h1>Detailed analysis</h1><p>Performance, concentration, attribution and trading behaviour calculated locally from your latest imports.</p></div><button className="primary" onClick={updatePrices} disabled={busy}>{busy ? progress || "Updating…" : "↻ Refresh analysis prices"}</button></div>
-        <Research state={state} onSave={next=>{stateRef.current=next;save(next,setState);}} onRefresh={()=>void updatePrices()} busy={busy}/>
+        <Research state={state} onSave={next=>{stateRef.current=next;save(next,setState);}} onRefresh={()=>void updatePrices().then(()=>updateHistory(true))} busy={busy||historyBusy}/>
+        {historyProgress&&<p className="quote-freshness" role="status">{historyProgress}</p>}
         {!state.holdings.length && <section className="empty-hero"><div className="empty-art">⌁</div><h2>Analysis begins with your holdings</h2><p>Import the current Holdings Statement and Order History to build a complete analytical view.</p><button className="primary" onClick={() => setView("import")}>Import statements</button></section>}
         {!!state.holdings.length && <>
           <section className="metric-grid analysis-metrics">

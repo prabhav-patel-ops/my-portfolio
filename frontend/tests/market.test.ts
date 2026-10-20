@@ -9,16 +9,16 @@ describe("market data identity and freshness",()=>{
     environment();vi.useFakeTimers({toFake:["Date"]});vi.setSystemTime(new Date("2026-10-20T08:00:00Z"));
     const payload={chart:{result:[{meta:{symbol:"^NSEI",currency:"INR"},timestamp:[1792368000,1792454400,1792540800],indicators:{quote:[{close:[100,null,102]}]}}]}};
     vi.stubGlobal("fetch",vi.fn(async()=>new Response(`Markdown Content:\n${JSON.stringify(payload)}`)));
-    const points=await fetchDailyHistory("^NSEI");expect(points).toEqual([{date:"2026-10-19",value:100}]);
+    const points=await fetchDailyHistory("^NSEI",fetch);expect(points).toEqual([{date:"2026-10-19",value:100}]);
   });
   it("rejects a historical response for another instrument",async()=>{
-    environment();vi.stubGlobal("fetch",vi.fn(async()=>new Response(JSON.stringify({chart:{result:[{meta:{symbol:"WRONG",currency:"USD"}}]}}))));
-    await expect(fetchDailyHistory("^NSEI")).rejects.toThrow("identity");
+    environment();vi.stubGlobal("fetch",vi.fn(async()=>new Response(`Markdown Content:\n${JSON.stringify({chart:{result:[{meta:{symbol:"WRONG",currency:"USD"}}]}})}`)));
+    await expect(fetchDailyHistory("^NSEI",fetch)).rejects.toThrow("identity");
   });
   it("does not claim a cached quote was freshly updated when requests fail",async()=>{
     environment();vi.stubGlobal("fetch",vi.fn(async()=>new Response("unavailable",{status:503})));
     const cached={price:100,previousClose:90,marketAt:new Date().toISOString(),fetchedAt:new Date().toISOString(),ticker:"A.NS",source:"test"};
-    const result=await refreshQuotes([{symbol:"A",name:"A",quantity:1,averagePrice:80}],{A:cached});
+    const result=await refreshQuotes([{symbol:"A",name:"A",quantity:1,averagePrice:80}],{A:cached},undefined,fetch);
     expect(result.updated).toBe(0);expect(result.errors).toEqual(["A"]);expect(result.quotes.A).toEqual(cached);
   });
   it("does not count expired or invalid cached quotes as priced holdings",()=>{
