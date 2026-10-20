@@ -1,4 +1,5 @@
 import type { Holding, Quote, Trade } from "./types";
+import { usable } from "./market";
 
 const DAY_MS = 86_400_000;
 const finite = (value: number) => Number.isFinite(value) ? value : 0;
@@ -30,7 +31,7 @@ export type ClosedSale = {
 
 export function analysePortfolio(holdings: Holding[], quotes: Record<string, Quote>, trades: Trade[]) {
   const positions: AnalysedPosition[] = holdings.map(holding => {
-    const quote = quotes[holding.symbol];
+    const quote = usable(quotes[holding.symbol]) ? quotes[holding.symbol] : undefined;
     const invested = finite(holding.quantity * holding.averagePrice);
     const value = quote ? finite(holding.quantity * quote.price) : 0;
     const pnl = quote ? value - invested : 0;

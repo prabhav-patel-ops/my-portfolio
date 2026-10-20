@@ -1,0 +1,500 @@
+[
+  {
+    "Category": "Risk",
+    "Metric Name": "Annualised Volatility",
+    "Definition / Formula": "Daily portfolio std. dev. of returns x sqrt(252)",
+    "Interpretation": "Measures how much the portfolio value fluctuates over a year. <15% = Low, 15-25% = Moderate, 25-35% = High, >35% = Very High (typical Indian equity ranges)."
+  },
+  {
+    "Category": "Risk",
+    "Metric Name": "1-Day VaR 95% (Historical)",
+    "Definition / Formula": "5th percentile of the actual 252-day daily P&L distribution, ranked worst to best",
+    "Interpretation": "On 95 of 100 trading days, the loss is expected to stay within this amount. Uses real historical scenarios, no distributional assumption."
+  },
+  {
+    "Category": "Risk",
+    "Metric Name": "1-Day VaR 99% (Historical)",
+    "Definition / Formula": "1st percentile of the 252-day daily P&L distribution",
+    "Interpretation": "A more extreme loss threshold than 95% VaR. Expected to be breached only ~2-3 times a year under normal conditions."
+  },
+  {
+    "Category": "Risk",
+    "Metric Name": "VaR 95% (Parametric / Variance-Covariance)",
+    "Definition / Formula": "z(1.645) x portfolio daily volatility x portfolio value",
+    "Interpretation": "Fast to compute but assumes returns are normally distributed, so it tends to underestimate tail risk in real (fat-tailed) markets."
+  },
+  {
+    "Category": "Risk",
+    "Metric Name": "VaR 99% (Parametric)",
+    "Definition / Formula": "z(2.326) x portfolio daily volatility x portfolio value",
+    "Interpretation": "Same normality assumption as 95% parametric VaR but for a more extreme confidence level."
+  },
+  {
+    "Category": "Risk",
+    "Metric Name": "VaR 95% (Monte Carlo)",
+    "Definition / Formula": "5th percentile of 10,000 simulated correlated daily P&L scenarios (Cholesky decomposition of covariance matrix)",
+    "Interpretation": "Most robust VaR method here since it directly captures cross-asset correlation effects rather than assuming a single distribution."
+  },
+  {
+    "Category": "Risk",
+    "Metric Name": "CVaR 95% / Expected Shortfall (ES)",
+    "Definition / Formula": "Mean of all historical daily P&L scenarios that fall below the VaR 95% threshold",
+    "Interpretation": "Answers 'if losses exceed VaR, how bad on average?'. Captures tail severity that VaR alone ignores."
+  },
+  {
+    "Category": "Risk",
+    "Metric Name": "Tail Ratio (VaR99 / VaR95, Historical)",
+    "Definition / Formula": "VaR 99% divided by VaR 95%",
+    "Interpretation": "Near 1.0 = thin-tailed/near-normal distribution. Above ~1.5 = fat tails, i.e. extreme losses disproportionately larger than moderate ones."
+  },
+  {
+    "Category": "Risk",
+    "Metric Name": "VaR-to-CVaR Ratio",
+    "Definition / Formula": "Historical VaR 95% / CVaR 95%",
+    "Interpretation": "Always <=1. Close to 1 means losses rarely exceed VaR by much (thin tail). Well below 1 = tail losses can be much worse than VaR (warning sign)."
+  },
+  {
+    "Category": "Risk",
+    "Metric Name": "Model Divergence (Parametric vs Historical VaR)",
+    "Definition / Formula": "(Parametric VaR 95% - Historical VaR 95%) / Historical VaR 95%, in %",
+    "Interpretation": "Positive = parametric model is conservative (overestimates risk). Negative = parametric underestimates risk (dangerous). Large divergence signals non-normal returns."
+  },
+  {
+    "Category": "Risk",
+    "Metric Name": "Component VaR",
+    "Definition / Formula": "Euler decomposition: weight_i x marginal VaR_i x portfolio value, summed = total Parametric VaR",
+    "Interpretation": "Attributes total portfolio VaR to each holding. Negative component VaR = that stock provides a diversification benefit, reducing overall risk."
+  },
+  {
+    "Category": "Risk",
+    "Metric Name": "Marginal VaR",
+    "Definition / Formula": "d(Portfolio VaR) / d(weight of holding i)",
+    "Interpretation": "Sensitivity of portfolio risk to a small increase in a position's weight. High marginal VaR = that stock is a key risk driver; adding more raises risk disproportionately."
+  },
+  {
+    "Category": "Risk",
+    "Metric Name": "Position Weight",
+    "Definition / Formula": "Market value of holding / total portfolio value",
+    "Interpretation": "Share of capital allocated to a position. Negative weight implies a net short position (cumulative sold > bought in the tradebook)."
+  },
+  {
+    "Category": "Risk",
+    "Metric Name": "Volatility Regime Classification",
+    "Definition / Formula": "Bucketing current annualised volatility into Low / Moderate / High / Very High",
+    "Interpretation": "Quick qualitative read on whether the portfolio is currently in a calm or turbulent risk regime."
+  },
+  {
+    "Category": "Risk",
+    "Metric Name": "6-Month Average VaR 95%",
+    "Definition / Formula": "Simple average of Historical VaR 95% over the trailing 6 monthly snapshots",
+    "Interpretation": "Baseline to judge whether current risk is elevated or subdued relative to the recent trend."
+  },
+  {
+    "Category": "Risk",
+    "Metric Name": "Beta (vs benchmark, e.g. Nifty 50)",
+    "Definition / Formula": "Cov(portfolio returns, benchmark returns) / Var(benchmark returns)",
+    "Interpretation": "Systematic risk relative to the market. Beta > 1 = more volatile than benchmark; < 1 = less volatile; negative = moves opposite to the benchmark."
+  },
+  {
+    "Category": "Risk",
+    "Metric Name": "Downside Deviation",
+    "Definition / Formula": "sqrt( mean( min(0, R_i - MAR)^2 ) ), annualised",
+    "Interpretation": "Volatility computed using only returns below a Minimum Acceptable Return (MAR). Unlike std. dev., it ignores upside variability, which investors don't mind."
+  },
+  {
+    "Category": "Risk",
+    "Metric Name": "Skewness",
+    "Definition / Formula": "Third standardised moment of the return distribution",
+    "Interpretation": "Negative skew = frequent small gains with occasional large losses (typical of equity strategies); positive skew = frequent small losses, occasional large gains."
+  },
+  {
+    "Category": "Risk",
+    "Metric Name": "Kurtosis (Excess)",
+    "Definition / Formula": "Fourth standardised moment of the return distribution, minus 3",
+    "Interpretation": "Excess kurtosis > 0 = fat tails / more extreme outliers than a normal distribution, i.e. higher chance of large surprise moves."
+  },
+  {
+    "Category": "Risk",
+    "Metric Name": "Tracking Error",
+    "Definition / Formula": "Annualised std. dev. of (portfolio return - benchmark return)",
+    "Interpretation": "How much the portfolio's returns deviate from its benchmark. Higher tracking error = more active/concentrated bets away from the benchmark."
+  },
+  {
+    "Category": "Risk",
+    "Metric Name": "R-squared (vs benchmark)",
+    "Definition / Formula": "Square of the correlation coefficient between portfolio and benchmark returns",
+    "Interpretation": "Proportion of portfolio return variance explained by the benchmark. High R^2 = portfolio moves closely with benchmark; low R^2 = returns driven by idiosyncratic/stock-specific factors."
+  },
+  {
+    "Category": "Risk",
+    "Metric Name": "Return Correlation Matrix",
+    "Definition / Formula": "Pearson correlation of daily returns between each pair of holdings",
+    "Interpretation": "High positive correlations across holdings reduce diversification benefit; negative/low correlations improve it."
+  },
+  {
+    "Category": "Risk",
+    "Metric Name": "Concentration (Herfindahl-Hirschman Index, HHI)",
+    "Definition / Formula": "Sum of squared position weights across all holdings",
+    "Interpretation": "Higher HHI = more concentrated portfolio (fewer effective bets), higher idiosyncratic risk; lower HHI = more diversified."
+  },
+  {
+    "Category": "Return",
+    "Metric Name": "Daily / Periodic Return",
+    "Definition / Formula": "(NAV_t / NAV_(t-1)) - 1",
+    "Interpretation": "Simple percentage change in portfolio value from one period to the next; building block for all other return metrics."
+  },
+  {
+    "Category": "Return",
+    "Metric Name": "Cumulative / Total Return",
+    "Definition / Formula": "(NAV_end / NAV_start) - 1",
+    "Interpretation": "Overall percentage gain or loss over the full period, ignoring the path taken to get there."
+  },
+  {
+    "Category": "Return",
+    "Metric Name": "CAGR (Compound Annual Growth Rate)",
+    "Definition / Formula": "(NAV_end / NAV_start)^(365/days) - 1",
+    "Interpretation": "The constant annual growth rate that would produce the same total return; the standard way to compare performance across different time horizons."
+  },
+  {
+    "Category": "Return",
+    "Metric Name": "Arithmetic Mean Return",
+    "Definition / Formula": "Average of periodic returns (simple mean)",
+    "Interpretation": "Simple average return per period; overstates true compounded growth when returns are volatile."
+  },
+  {
+    "Category": "Return",
+    "Metric Name": "Geometric Mean Return",
+    "Definition / Formula": "[Product(1+R_i)]^(1/n) - 1",
+    "Interpretation": "Return accounting for compounding; the mathematically correct average for comparing growth over multiple periods."
+  },
+  {
+    "Category": "Return",
+    "Metric Name": "Sharpe Ratio",
+    "Definition / Formula": "(Annualised Return - Risk-Free Rate) / Annualised Volatility",
+    "Interpretation": "Excess return earned per unit of total risk (volatility). Higher is better; >1 is generally considered good, >2 very good."
+  },
+  {
+    "Category": "Return",
+    "Metric Name": "Sortino Ratio",
+    "Definition / Formula": "(Annualised Return - MAR) / Downside Deviation",
+    "Interpretation": "Like Sharpe but penalises only downside volatility. Preferred when upside volatility shouldn't count against the strategy."
+  },
+  {
+    "Category": "Return",
+    "Metric Name": "Calmar Ratio",
+    "Definition / Formula": "Annualised Return / |Maximum Drawdown|",
+    "Interpretation": "Return earned per unit of worst-case peak-to-trough loss. Popular for strategies where large drawdowns are the key risk to avoid."
+  },
+  {
+    "Category": "Return",
+    "Metric Name": "Sterling Ratio",
+    "Definition / Formula": "Annualised Return / (Average of the largest N drawdowns + adjustment, typically 10%)",
+    "Interpretation": "Similar intent to Calmar but uses an average of significant drawdowns instead of just the single worst one, reducing sensitivity to one outlier event."
+  },
+  {
+    "Category": "Return",
+    "Metric Name": "Treynor Ratio",
+    "Definition / Formula": "(Annualised Return - Risk-Free Rate) / Beta",
+    "Interpretation": "Excess return per unit of systematic (market) risk. Useful for well-diversified portfolios where idiosyncratic risk has largely been diversified away."
+  },
+  {
+    "Category": "Return",
+    "Metric Name": "Jensen's Alpha",
+    "Definition / Formula": "Portfolio Return - [Risk-Free Rate + Beta x (Benchmark Return - Risk-Free Rate)]",
+    "Interpretation": "Return earned in excess of what CAPM predicts given the portfolio's beta. Positive alpha = manager added value beyond market exposure."
+  },
+  {
+    "Category": "Return",
+    "Metric Name": "Information Ratio",
+    "Definition / Formula": "(Portfolio Return - Benchmark Return) / Tracking Error",
+    "Interpretation": "Consistency of outperformance versus the benchmark, risk-adjusted for how much the portfolio deviates from it. Higher = more reliable alpha generation."
+  },
+  {
+    "Category": "Return",
+    "Metric Name": "Omega Ratio",
+    "Definition / Formula": "Sum of returns above a threshold / |Sum of returns below the threshold| (probability-weighted)",
+    "Interpretation": "Captures the full shape of the return distribution (all moments), not just mean/variance. >1 means gains outweigh losses relative to the threshold."
+  },
+  {
+    "Category": "Return",
+    "Metric Name": "Win Rate",
+    "Definition / Formula": "Number of positive-return periods / Total number of periods",
+    "Interpretation": "Fraction of days/months the strategy was profitable. High win rate alone doesn't guarantee profitability if losses are large."
+  },
+  {
+    "Category": "Return",
+    "Metric Name": "Average Win / Average Loss",
+    "Definition / Formula": "Mean return of winning periods; Mean return of losing periods",
+    "Interpretation": "Shows typical size of gains vs losses. Combined with win rate, indicates whether the edge comes from frequency or magnitude."
+  },
+  {
+    "Category": "Return",
+    "Metric Name": "Profit Factor",
+    "Definition / Formula": "Sum of all gains / |Sum of all losses|",
+    "Interpretation": "Ratio of total profit to total loss. >1 means the strategy is net profitable; higher values indicate a stronger edge."
+  },
+  {
+    "Category": "Return",
+    "Metric Name": "Gain-to-Pain Ratio",
+    "Definition / Formula": "Sum of monthly returns / |Sum of negative monthly returns|",
+    "Interpretation": "Similar to profit factor but computed on monthly data; commonly used to judge smoothness of returns for allocators."
+  },
+  {
+    "Category": "Return",
+    "Metric Name": "Rolling Returns (e.g. 1M/3M/1Y rolling)",
+    "Definition / Formula": "Return computed over a moving window, recalculated at each date",
+    "Interpretation": "Shows consistency of performance across different starting points, revealing whether returns depend heavily on the specific entry date chosen."
+  },
+  {
+    "Category": "Return",
+    "Metric Name": "Benchmark-Relative / Excess Return",
+    "Definition / Formula": "Portfolio Return - Benchmark Return (e.g. Nifty 50) over the same period",
+    "Interpretation": "Direct measure of active outperformance or underperformance versus the chosen benchmark."
+  },
+  {
+    "Category": "Drawdown",
+    "Metric Name": "Drawdown (at a point in time)",
+    "Definition / Formula": "(NAV_t - Running Peak NAV up to t) / Running Peak NAV",
+    "Interpretation": "Percentage decline from the most recent all-time high. Always <= 0; 0 means the portfolio is at a new peak."
+  },
+  {
+    "Category": "Drawdown",
+    "Metric Name": "Maximum Drawdown (MDD)",
+    "Definition / Formula": "Minimum value of the drawdown series over the full history",
+    "Interpretation": "The single worst peak-to-trough loss ever experienced. Key measure of worst-case historical pain; used in Calmar/Sterling ratios."
+  },
+  {
+    "Category": "Drawdown",
+    "Metric Name": "Average Drawdown",
+    "Definition / Formula": "Mean of all negative drawdown values over the period (or mean of trough values of each distinct drawdown episode)",
+    "Interpretation": "Typical magnitude of declines experienced, giving a sense of 'normal' pain versus the worst-case MDD."
+  },
+  {
+    "Category": "Drawdown",
+    "Metric Name": "Drawdown Duration",
+    "Definition / Formula": "Number of days/periods from a peak to the point the drawdown reaches its trough",
+    "Interpretation": "How long it takes to hit bottom once a decline begins; longer duration can be harder for investors to tolerate psychologically."
+  },
+  {
+    "Category": "Drawdown",
+    "Metric Name": "Recovery Time / Time to Recover",
+    "Definition / Formula": "Number of days/periods from the trough back to a new all-time high (previous peak)",
+    "Interpretation": "Measures resilience - how quickly the strategy recoups losses. Longer recovery time means capital is 'stuck' underwater for longer."
+  },
+  {
+    "Category": "Drawdown",
+    "Metric Name": "Time Under Water (TuW)",
+    "Definition / Formula": "Total number of days/periods the NAV is below its previous peak",
+    "Interpretation": "Cumulative time spent in any drawdown, not just the worst one. High TuW indicates the strategy spends much of its life recovering rather than compounding."
+  },
+  {
+    "Category": "Drawdown",
+    "Metric Name": "Ulcer Index",
+    "Definition / Formula": "sqrt( mean( Drawdown_t^2 ) ) over the period",
+    "Interpretation": "Root-mean-square of drawdowns, penalising both depth and duration of declines. Higher ulcer index = more sustained/severe pain (the 'stress' the investor feels)."
+  },
+  {
+    "Category": "Drawdown",
+    "Metric Name": "Pain Index",
+    "Definition / Formula": "Mean of |Drawdown_t| over the period",
+    "Interpretation": "Average magnitude of drawdown across all periods (not just when in a drawdown). Similar intent to Ulcer Index but linear rather than squared."
+  },
+  {
+    "Category": "Drawdown",
+    "Metric Name": "Pain Ratio",
+    "Definition / Formula": "Annualised Return / Pain Index",
+    "Interpretation": "Return earned per unit of average drawdown pain endured, analogous to Calmar but using Pain Index instead of Maximum Drawdown."
+  },
+  {
+    "Category": "Drawdown",
+    "Metric Name": "Lake Ratio",
+    "Definition / Formula": "Sum of the 'underwater' area (drawdown depth x duration) / Sum of the NAV curve area",
+    "Interpretation": "Visualises drawdowns as a 'lake' below the high-water-mark line; higher ratio = more of the equity curve's life spent underwater."
+  },
+  {
+    "Category": "Drawdown",
+    "Metric Name": "Current Drawdown",
+    "Definition / Formula": "(Latest NAV - Running Peak NAV) / Running Peak NAV, as of the report date",
+    "Interpretation": "How far the portfolio currently sits below its most recent all-time high; tells you if you're presently 'in the hole'."
+  },
+  {
+    "Category": "Drawdown",
+    "Metric Name": "Number of Drawdown Episodes",
+    "Definition / Formula": "Count of distinct peak-to-trough-to-recovery cycles exceeding a minimum depth threshold",
+    "Interpretation": "Frequency of meaningful declines; useful alongside average depth/duration to characterise drawdown behaviour."
+  },
+  {
+    "Category": "Drawdown",
+    "Metric Name": "Conditional Drawdown at Risk (CDaR)",
+    "Definition / Formula": "Average of the worst X% of drawdowns over the historical period",
+    "Interpretation": "Tail-risk analogue of CVaR but applied to the drawdown series rather than single-period returns; captures clustering of bad periods."
+  },
+  {
+    "Category": "NAV Curve",
+    "Metric Name": "NAV (Net Asset Value)",
+    "Definition / Formula": "Total portfolio market value (or per-unit value) at each date, indexed/normalised to a base (e.g. 100 or 1)",
+    "Interpretation": "The core equity curve; all return, risk, and drawdown metrics are derived from its time series."
+  },
+  {
+    "Category": "NAV Curve",
+    "Metric Name": "High-Water Mark (HWM)",
+    "Definition / Formula": "Running maximum of the NAV series up to time t",
+    "Interpretation": "The peak value the portfolio has ever reached. Used as the reference point for computing drawdowns and (in funds) for performance-fee calculations."
+  },
+  {
+    "Category": "NAV Curve",
+    "Metric Name": "Cumulative Return Curve",
+    "Definition / Formula": "Running product of (1+R_i) - 1, plotted over time",
+    "Interpretation": "Visual growth-of-₹1 (or ₹100) chart showing compounding effect over the full history."
+  },
+  {
+    "Category": "NAV Curve",
+    "Metric Name": "Rolling Volatility",
+    "Definition / Formula": "Annualised std. dev. of returns computed over a moving window (e.g. 30/60/90-day)",
+    "Interpretation": "Shows how risk has evolved over time rather than a single static number; spikes indicate periods of market stress."
+  },
+  {
+    "Category": "NAV Curve",
+    "Metric Name": "Rolling Sharpe Ratio",
+    "Definition / Formula": "Sharpe ratio recomputed over a moving window",
+    "Interpretation": "Tracks whether risk-adjusted performance is improving, stable, or deteriorating through time."
+  },
+  {
+    "Category": "NAV Curve",
+    "Metric Name": "Underwater Curve",
+    "Definition / Formula": "Plot of Drawdown_t (NAV vs running HWM) across the full history",
+    "Interpretation": "Visual complement to the NAV curve, highlighting depth and duration of every drawdown episode at a glance."
+  },
+  {
+    "Category": "NAV Curve",
+    "Metric Name": "Compounded Annual Growth (from NAV)",
+    "Definition / Formula": "(NAV_end / NAV_start)^(365/days) - 1",
+    "Interpretation": "Same as CAGR but computed directly from the indexed NAV series; the headline long-run growth rate of the equity curve."
+  },
+  {
+    "Category": "NAV Curve",
+    "Metric Name": "Best / Worst Period Return",
+    "Definition / Formula": "Max / Min of the periodic return series (day, month, or year)",
+    "Interpretation": "Extremes of the return distribution realised historically; useful sanity check alongside VaR/CVaR."
+  },
+  {
+    "Category": "NAV Curve",
+    "Metric Name": "Positive/Negative Period Count",
+    "Definition / Formula": "Count of periods where return > 0 vs return < 0",
+    "Interpretation": "Simple consistency check on the NAV curve's day-to-day or month-to-month behaviour, feeding into Win Rate."
+  },
+  {
+    "Category": "Composition & Diversification",
+    "Metric Name": "Sector Allocation (%)",
+    "Definition / Formula": "Sum of market value of all holdings in a sector / Total portfolio value",
+    "Interpretation": "Shows how capital is spread across sectors (e.g. Financials, IT, Energy). Heavy tilt to one sector raises exposure to sector-specific shocks (e.g. rate-sensitive financials, IT demand cycles)."
+  },
+  {
+    "Category": "Composition & Diversification",
+    "Metric Name": "Industry Allocation (%)",
+    "Definition / Formula": "Sum of market value of all holdings in an industry (sub-sector) / Total portfolio value",
+    "Interpretation": "Finer-grained than sector allocation (e.g. 'Private Banks' vs all 'Financials'); reveals concentration a sector-level view can mask."
+  },
+  {
+    "Category": "Composition & Diversification",
+    "Metric Name": "Sector/Industry Active Weight",
+    "Definition / Formula": "Portfolio sector weight - Benchmark (e.g. Nifty 50) sector weight",
+    "Interpretation": "Positive = overweight that sector vs the benchmark, negative = underweight. Shows where the active bets relative to the index actually are."
+  },
+  {
+    "Category": "Composition & Diversification",
+    "Metric Name": "Individual Holding Weight (%)",
+    "Definition / Formula": "Market value of a single stock / Total portfolio value",
+    "Interpretation": "Position-level concentration. Position size limits (e.g. no single stock >5-10%) are a standard risk control."
+  },
+  {
+    "Category": "Composition & Diversification",
+    "Metric Name": "Top-N Holdings Concentration (e.g. Top 5 / Top 10)",
+    "Definition / Formula": "Sum of weights of the N largest positions by market value",
+    "Interpretation": "High top-N concentration means portfolio performance is dominated by a handful of names; low concentration implies broader diversification."
+  },
+  {
+    "Category": "Composition & Diversification",
+    "Metric Name": "Number of Holdings",
+    "Definition / Formula": "Count of distinct positions with non-zero net quantity",
+    "Interpretation": "Simple headline diversification measure; more holdings generally (but not always) means less idiosyncratic risk per name."
+  },
+  {
+    "Category": "Composition & Diversification",
+    "Metric Name": "Effective Number of Holdings (Effective N)",
+    "Definition / Formula": "1 / HHI, where HHI = sum of squared position weights",
+    "Interpretation": "Diversification measured in 'equivalent equal-weight positions'. E.g. Effective N = 12 with 40 actual holdings means concentration is really equivalent to just 12 equal bets."
+  },
+  {
+    "Category": "Composition & Diversification",
+    "Metric Name": "Herfindahl-Hirschman Index (HHI) - Stock Level",
+    "Definition / Formula": "Sum of (position weight)^2 across all holdings",
+    "Interpretation": "Ranges from ~0 (fully diversified) to 1 (single stock). Higher HHI = more concentrated, higher stock-specific (idiosyncratic) risk."
+  },
+  {
+    "Category": "Composition & Diversification",
+    "Metric Name": "Herfindahl-Hirschman Index (HHI) - Sector Level",
+    "Definition / Formula": "Sum of (sector weight)^2 across all sectors",
+    "Interpretation": "Same idea as stock-level HHI but applied to sector weights; flags sector concentration risk even if individual stock weights look fine."
+  },
+  {
+    "Category": "Composition & Diversification",
+    "Metric Name": "Diversification Ratio",
+    "Definition / Formula": "Weighted average of individual holding volatilities / Portfolio volatility",
+    "Interpretation": "Ratio > 1 shows the benefit of diversification - the portfolio is less volatile than the weighted average of its parts. Higher ratio = more diversification benefit captured."
+  },
+  {
+    "Category": "Composition & Diversification",
+    "Metric Name": "Average Pairwise Correlation (Holdings)",
+    "Definition / Formula": "Mean of the off-diagonal entries of the holdings' return correlation matrix",
+    "Interpretation": "Low/negative average correlation = holdings tend to move independently (good diversification); high average correlation = holdings move together, reducing the diversification benefit of adding more names."
+  },
+  {
+    "Category": "Composition & Diversification",
+    "Metric Name": "Market-Cap Segment Allocation (Large/Mid/Small Cap %)",
+    "Definition / Formula": "Sum of market value of holdings in each cap bucket / Total portfolio value",
+    "Interpretation": "Shows style/size tilt. Small/mid-cap heavy portfolios usually carry higher volatility and liquidity risk than large-cap heavy ones."
+  },
+  {
+    "Category": "Composition & Diversification",
+    "Metric Name": "Gross Exposure",
+    "Definition / Formula": "(Sum of |long position values| + |short position values|) / Portfolio value",
+    "Interpretation": "Total market exposure including leverage from shorts. Gross exposure > 100% implies use of leverage."
+  },
+  {
+    "Category": "Composition & Diversification",
+    "Metric Name": "Net Exposure",
+    "Definition / Formula": "(Sum of long position values - Sum of short position values) / Portfolio value",
+    "Interpretation": "Directional market exposure. Net exposure near 100% = fully long-biased; near 0% = market-neutral; negative = net short."
+  },
+  {
+    "Category": "Composition & Diversification",
+    "Metric Name": "Long / Short Weight Split (%)",
+    "Definition / Formula": "Sum of long position weights vs sum of |short position weights|",
+    "Interpretation": "Shows how much of the book is long vs short; relevant for long-short or market-neutral strategies."
+  },
+  {
+    "Category": "Composition & Diversification",
+    "Metric Name": "Cash / Unallocated Weight (%)",
+    "Definition / Formula": "(Portfolio value - Sum of invested position values) / Portfolio value",
+    "Interpretation": "Uninvested cash buffer. High cash weight lowers market exposure and can be a drag in rising markets but a cushion in falling ones."
+  },
+  {
+    "Category": "Composition & Diversification",
+    "Metric Name": "Portfolio Turnover Ratio",
+    "Definition / Formula": "Min(Total buys, Total sells) over a period / Average portfolio value over that period",
+    "Interpretation": "How frequently holdings are traded/replaced. High turnover raises transaction costs and taxes; low turnover suggests a buy-and-hold style."
+  },
+  {
+    "Category": "Composition & Diversification",
+    "Metric Name": "Active Share",
+    "Definition / Formula": "0.5 x Sum of |portfolio weight_i - benchmark weight_i| across all stocks (portfolio + benchmark union)",
+    "Interpretation": "Percentage of the portfolio that differs from the benchmark. High active share = truly active management; low active share = portfolio closely hugs the benchmark ('closet indexing')."
+  },
+  {
+    "Category": "Composition & Diversification",
+    "Metric Name": "Weighted Average Liquidity (e.g. Days-to-Liquidate)",
+    "Definition / Formula": "Sum over holdings of [position value / (ADV x participation rate)], weighted by position size",
+    "Interpretation": "Estimates how long it would take to exit the portfolio without excessive market impact. Higher values flag potential liquidity risk in stress scenarios."
+  }
+]
